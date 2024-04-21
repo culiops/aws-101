@@ -1,0 +1,83 @@
+version: '3.1'
+
+services:
+  gateway:
+    image: nginxproxy/nginx-proxy
+    container_name: gateway
+    volumes:
+      - conf:/etc/nginx/conf.d
+      - html:/usr/share/nginx/html
+      - vhost:/etc/nginx/vhost.d
+      - certs:/etc/nginx/certs
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    deploy:
+      resources:
+        limits:
+          cpus: 0.50
+          memory: 256M
+    restart: "always"
+    depends_on:
+      app:
+        condition: service_healthy
+
+  acme:
+    image: nginxproxy/acme-companion:latest
+    container_name: acme
+    volumes_from:
+      - gateway
+    volumes:
+      - acme:/etc/acme.sh
+      - certs:/etc/nginx/certs:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      NGINX_PROXY_CONTAINER: gateway
+      DEFAULT_EMAIL: admin@culiops.dev
+    deploy:
+      resources:
+        limits:
+          cpus: 0.25
+          memory: 128M
+    restart: "always"
+    depends_on:
+      - "gateway"
+
+  app:
+    image: wordpress
+    restart: always
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: culiop_blog
+      WORDPRESS_DB_PASSWORD: culiop_blog
+      WORDPRESS_DB_NAME: culiop_blog
+      VIRTUAL_HOST: blog.culiops.cloud
+      LETSENCRYPT_HOST: blog.culiops.cloud
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - wordpress:/var/www/html
+
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_DATABASE: culiop_blog
+      MYSQL_USER: culiop_blog
+      MYSQL_PASSWORD: culiop_blog
+      MYSQL_RANDOM_ROOT_PASSWORD: '1'
+    volumes:
+      - db:/var/lib/mysql
+
+volumes:
+  wordpress:
+  db:
+  conf:
+  vhost:
+  certs:
+  html:
+  acme:
